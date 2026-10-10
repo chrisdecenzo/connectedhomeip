@@ -19,7 +19,9 @@
 
 #include <app/CommandResponseHelper.h>
 #include <app/clusters/content-launch-server/content-launch-delegate.h>
+#include <app/server-cluster/testing/MockCommandHandler.h>
 #include <lib/core/CHIPError.h>
+#include <protocols/interaction_model/StatusCode.h>
 
 using namespace chip;
 using namespace chip::app;
@@ -89,6 +91,41 @@ TEST_F(TestContentLaunchServer, TestDelegateDefaultHandleGetPresets)
     // We can't easily test the encoder output without a full AttributeValueEncoder mock,
     // but we verify the method is callable and the return type is correct.
     (void) &Delegate::HandleGetPresets;
+}
+
+TEST_F(TestContentLaunchServer, TestDelegateDefaultHandleContentReplicationRequest)
+{
+    TestDelegate delegate;
+    chip::Testing::MockCommandHandler mockHandler;
+    ConcreteCommandPath commandPath(1, Id, Commands::ContentReplicationRequest::Id);
+    CommandResponseHelper<Commands::ContentReplicationResponse::Type> helper(&mockHandler, commandPath);
+
+    delegate.HandleContentReplicationRequest(helper);
+
+    // Without an override there is no content to replicate, so the request is refused and,
+    // per the spec, ReplicationInfo is null rather than an empty Success.
+    ASSERT_TRUE(mockHandler.HasResponse());
+    Commands::ContentReplicationResponse::DecodableType response;
+    EXPECT_EQ(mockHandler.DecodeResponse(response), CHIP_NO_ERROR);
+    EXPECT_EQ(response.status, StatusEnum::kReplicationNotSupported);
+    ASSERT_TRUE(response.replicationInfo.HasValue());
+    EXPECT_TRUE(response.replicationInfo.Value().IsNull());
+}
+
+TEST_F(TestContentLaunchServer, TestDelegateDefaultHandlePlayPreset)
+{
+    TestDelegate delegate;
+    chip::Testing::MockCommandHandler mockHandler;
+    ConcreteCommandPath commandPath(1, Id, Commands::PlayPreset::Id);
+
+    delegate.HandlePlayPreset(&mockHandler, commandPath, 1);
+
+    // The default Presets list is empty, so no PresetID can match.
+    ASSERT_TRUE(mockHandler.HasStatus());
+    const auto & status = mockHandler.GetLastStatus().status;
+    EXPECT_EQ(status.GetStatus(), Protocols::InteractionModel::Status::Failure);
+    ASSERT_TRUE(status.GetClusterSpecificCode().has_value());
+    EXPECT_EQ(status.GetClusterSpecificCode().value(), to_underlying(StatusEnum::kPresetNotFound));
 }
 
 TEST_F(TestContentLaunchServer, TestDelegateGetSupportedStreamingProtocols)
